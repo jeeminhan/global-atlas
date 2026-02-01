@@ -68,19 +68,21 @@ function App() {
                     </button>
                     <button
                         onClick={() => setIsRulesOpen(true)}
-                        className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-stone-500 hover:bg-stone-100 rounded-full transition-colors text-sm font-medium"
                         title="How to Play"
                     >
-                        <HelpCircle size={20} />
+                        <HelpCircle size={18} />
+                        <span className="hidden sm:inline">How to Play</span>
                     </button>
                     <div className="bg-stone-100 px-3 py-1 rounded-full text-xs font-semibold text-stone-600">
                         {visitedCount} / 195
                     </div>
                     <button
                         onClick={() => setIsGalleryOpen(true)}
-                        className="p-2 bg-stone-800 text-white rounded-full hover:bg-stone-900 shadow-md transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-stone-800 text-white rounded-full hover:bg-stone-900 shadow-md transition-colors text-sm font-semibold"
                     >
-                        <BookOpen size={20} />
+                        <BookOpen size={18} />
+                        <span>Passport</span>
                     </button>
                 </div>
             </header>
