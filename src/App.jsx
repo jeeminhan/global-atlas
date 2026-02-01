@@ -3,7 +3,7 @@ import WorldMap from "./components/WorldMap";
 import JournalModal from "./components/JournalModal";
 import PassportGallery from "./components/PassportGallery";
 import RulesModal from "./components/RulesModal";
-import { BookOpen, Map as MapIcon, Plus, HelpCircle } from "lucide-react";
+import { BookOpen, Map as MapIcon, Plus, HelpCircle, MessageCircle } from "lucide-react";
 
 function App() {
     const [entries, setEntries] = useState([]);
@@ -56,6 +56,15 @@ function App() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <a
+                        href="https://docs.google.com/forms/d/e/1FAIpQLSfsumMzcBOvPNBvZ3mmVdAJxdkkOSVqUJdoDgApWlcw5QglzQ/viewform?usp=dialog"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"
+                        title="Give Feedback"
+                    >
+                        <MessageCircle size={20} />
+                    </a>
                     <button
                         onClick={() => setIsRulesOpen(true)}
                         className="p-2 text-stone-500 hover:bg-stone-100 rounded-full transition-colors"
