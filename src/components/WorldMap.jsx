@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from "react-simple-maps";
 import { Tooltip } from "react-tooltip";
 import { geoCentroid } from "d3-geo";
@@ -27,20 +27,73 @@ const abbreviations = {
     "Congo": "COG",
 };
 
+// Large countries that show labels at low zoom
+const majorCountries = [
+    "United States of America", "Russia", "Canada", "China", "Brazil",
+    "Australia", "India", "Argentina", "Kazakhstan", "Algeria",
+    "Democratic Republic of the Congo", "Saudi Arabia", "Mexico", "Indonesia",
+    "Sudan", "Libya", "Iran", "Mongolia", "Peru", "Chad", "Niger", "Angola",
+    "Mali", "South Africa", "Colombia", "Ethiopia", "Bolivia", "Mauritania",
+    "Egypt", "Tanzania", "Nigeria", "Pakistan", "Namibia", "Mozambique",
+    "Venezuela", "Zambia", "Turkey", "Myanmar", "Afghanistan", "Somalia"
+];
+
 const WorldMap = ({ onCountryClick, countryStats = {} }) => {
     const [content, setContent] = useState("");
+    const [currentZoom, setCurrentZoom] = useState(1);
+    const [isMobile, setIsMobile] = useState(false);
+
+    // Detect mobile on mount
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener("resize", checkMobile);
+        return () => window.removeEventListener("resize", checkMobile);
+    }, []);
 
     const colors = {
         unvisited: "#D6D3D1",
-        bronze: "#B45309", // Amber-700
-        silver: "#BCC6CC", // Metallic Silver
-        gold: "#EAB308",   // Yellow-500
+        bronze: "#B45309",
+        silver: "#BCC6CC",
+        gold: "#EAB308",
+    };
+
+    // Adaptive initial zoom: mobile starts more zoomed in
+    const initialZoom = isMobile ? 1.8 : 1;
+    const initialCenter = isMobile ? [0, 30] : [0, 20];
+
+    // Calculate label visibility based on zoom
+    const getLabelOpacity = (countryName) => {
+        const isMajor = majorCountries.includes(countryName);
+
+        // At zoom 1-1.5: only major countries visible
+        if (currentZoom < 1.5) {
+            return isMajor ? 0.4 : 0;
+        }
+        // At zoom 1.5-2.5: major countries clear, others fading in
+        if (currentZoom < 2.5) {
+            return isMajor ? 0.6 : 0.3;
+        }
+        // At zoom 2.5+: all labels visible
+        return 0.7;
+    };
+
+    // Dynamic font size based on zoom
+    const getLabelFontSize = () => {
+        if (currentZoom < 1.5) return 4;
+        if (currentZoom < 2.5) return 3.5;
+        return 3;
     };
 
     return (
         <div className="w-full h-full bg-stone-100 relative overflow-hidden rounded-xl border border-stone-200 shadow-inner">
             <ComposableMap projection="geoMercator" projectionConfig={{ scale: 100 }}>
-                <ZoomableGroup center={[0, 20]} zoom={1} maxZoom={4}>
+                <ZoomableGroup
+                    center={initialCenter}
+                    zoom={initialZoom}
+                    maxZoom={8}
+                    onMoveEnd={({ zoom }) => setCurrentZoom(zoom)}
+                >
                     <Geographies geography={geoUrl}>
                         {({ geographies }) =>
                             geographies.map((geo) => {
@@ -55,6 +108,7 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
 
                                 const centroid = geoCentroid(geo);
                                 const label = abbreviations[name] || name.substring(0, 3).toUpperCase();
+                                const labelOpacity = getLabelOpacity(name);
 
                                 return (
                                     <React.Fragment key={geo.rsmKey}>
@@ -84,17 +138,26 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
                                                 },
                                             }}
                                         />
-                                        <Marker coordinates={centroid}>
-                                            <text
-                                                y="2"
-                                                fontSize={3}
-                                                textAnchor="middle"
-                                                fill="#44403C"
-                                                className="pointer-events-none opacity-50 font-semibold uppercase tracking-wider"
-                                            >
-                                                {label}
-                                            </text>
-                                        </Marker>
+                                        {labelOpacity > 0 && (
+                                            <Marker coordinates={centroid}>
+                                                <text
+                                                    y="2"
+                                                    fontSize={getLabelFontSize()}
+                                                    textAnchor="middle"
+                                                    fill="#44403C"
+                                                    style={{
+                                                        opacity: labelOpacity,
+                                                        transition: "opacity 0.3s ease",
+                                                        pointerEvents: "none",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em"
+                                                    }}
+                                                >
+                                                    {label}
+                                                </text>
+                                            </Marker>
+                                        )}
                                     </React.Fragment>
                                 );
                             })
@@ -106,10 +169,16 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
 
             {/* Helper text overlay */}
             <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-stone-500 shadow-sm pointer-events-none">
-                Tap a country to start
+                {isMobile ? "Pinch to zoom • Tap a country" : "Scroll to zoom • Click a country"}
+            </div>
+
+            {/* Zoom indicator */}
+            <div className="absolute bottom-4 right-4 bg-white/80 backdrop-blur px-2 py-1 rounded-full text-xs font-medium text-stone-400 shadow-sm pointer-events-none">
+                {currentZoom.toFixed(1)}x
             </div>
         </div>
     );
 };
 
 export default WorldMap;
+
