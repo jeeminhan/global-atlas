@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from "react-simple-maps";
 import { Tooltip } from "react-tooltip";
 import { geoCentroid } from "d3-geo";
+import { Plus, Minus } from "lucide-react";
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
@@ -40,16 +41,107 @@ const majorCountries = [
 
 const WorldMap = ({ onCountryClick, countryStats = {} }) => {
     const [content, setContent] = useState("");
-    const [currentZoom, setCurrentZoom] = useState(1);
-    const [isMobile, setIsMobile] = useState(false);
+    // Lazy init position to set distinct initial center for mobile vs desktop
+    const [position, setPosition] = useState(() => {
+        const isMobileInit = typeof window !== 'undefined' && window.innerWidth < 768;
+        return { coordinates: isMobileInit ? [0, 30] : [0, 20], zoom: isMobileInit ? 1.5 : 1 };
+    });
 
-    // Detect mobile on mount
+    // Track dimensions to ensure map fills container
+    const [dimensions, setDimensions] = useState(() => ({
+        width: typeof window !== 'undefined' ? window.innerWidth : 800,
+        height: typeof window !== 'undefined' ? window.innerHeight : 600
+    }));
+
+    const [isMobile, setIsMobile] = useState(false);
+    const containerRef = useRef(null);
+    const lastPinchDistance = useRef(null);
+
+    // Update dimensions and mobile status via ResizeObserver
     useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener("resize", checkMobile);
-        return () => window.removeEventListener("resize", checkMobile);
+        const container = containerRef.current;
+        if (!container) return;
+
+        // Initial measure
+        setDimensions({ width: container.offsetWidth, height: container.offsetHeight });
+        setIsMobile(container.offsetWidth < 768);
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                setDimensions({ width, height });
+                setIsMobile(width < 768);
+            }
+        });
+
+        resizeObserver.observe(container);
+        return () => resizeObserver.disconnect();
     }, []);
+
+    // Pinch-to-zoom touch handlers for mobile
+    const getDistance = useCallback((touches) => {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }, []);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        // Touch events for mobile pinch
+        const handleTouchStart = (e) => {
+            if (e.touches.length === 2) {
+                lastPinchDistance.current = getDistance(e.touches);
+            }
+        };
+
+        const handleTouchMove = (e) => {
+            if (e.touches.length === 2 && lastPinchDistance.current !== null) {
+                e.preventDefault();
+                const newDistance = getDistance(e.touches);
+                const scale = newDistance / lastPinchDistance.current;
+
+                setPosition(prev => ({
+                    ...prev,
+                    zoom: Math.max(1, Math.min(8, prev.zoom * scale))
+                }));
+
+                lastPinchDistance.current = newDistance;
+            }
+        };
+
+        const handleTouchEnd = () => {
+            lastPinchDistance.current = null;
+        };
+
+        // Wheel event for Mac trackpad pinch AND scroll wheel zoom
+        const handleWheel = (e) => {
+            e.preventDefault();
+
+            // Mac trackpad pinch gestures have ctrlKey = true
+            // Regular scroll wheel zooming
+            const zoomSensitivity = e.ctrlKey ? 0.01 : 0.002;
+            const delta = -e.deltaY * zoomSensitivity;
+
+            setPosition(prev => ({
+                ...prev,
+                zoom: Math.max(1, Math.min(8, prev.zoom * (1 + delta)))
+            }));
+        };
+
+        container.addEventListener('touchstart', handleTouchStart, { passive: false });
+        container.addEventListener('touchmove', handleTouchMove, { passive: false });
+        container.addEventListener('touchend', handleTouchEnd);
+        container.addEventListener('wheel', handleWheel, { passive: false });
+
+        return () => {
+            container.removeEventListener('touchstart', handleTouchStart);
+            container.removeEventListener('touchmove', handleTouchMove);
+            container.removeEventListener('touchend', handleTouchEnd);
+            container.removeEventListener('wheel', handleWheel);
+        };
+    }, [getDistance]);
 
     const colors = {
         unvisited: "#D6D3D1",
@@ -58,23 +150,18 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
         gold: "#EAB308",
     };
 
-    // Adaptive initial zoom: mobile starts more zoomed in
-    const initialZoom = isMobile ? 1.8 : 1;
-    const initialCenter = isMobile ? [0, 30] : [0, 20];
+    const currentZoom = position.zoom;
 
     // Calculate label visibility based on zoom
     const getLabelOpacity = (countryName) => {
         const isMajor = majorCountries.includes(countryName);
 
-        // At zoom 1-1.5: only major countries visible
         if (currentZoom < 1.5) {
             return isMajor ? 0.4 : 0;
         }
-        // At zoom 1.5-2.5: major countries clear, others fading in
         if (currentZoom < 2.5) {
             return isMajor ? 0.6 : 0.3;
         }
-        // At zoom 2.5+: all labels visible
         return 0.7;
     };
 
@@ -85,14 +172,55 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
         return 3;
     };
 
+    // Handle zoom/pan end from gestures - with validation
+    const handleMoveEnd = (newPosition) => {
+        // Validate the position data before updating state
+        if (newPosition &&
+            typeof newPosition.zoom === 'number' &&
+            !isNaN(newPosition.zoom) &&
+            Array.isArray(newPosition.coordinates) &&
+            newPosition.coordinates.length === 2 &&
+            typeof newPosition.coordinates[0] === 'number' &&
+            typeof newPosition.coordinates[1] === 'number') {
+            setPosition({
+                coordinates: newPosition.coordinates,
+                zoom: Math.max(1, Math.min(8, newPosition.zoom))
+            });
+        }
+    };
+
+    // Zoom button handlers
+    const handleZoomIn = () => {
+        if (position.zoom < 8) {
+            setPosition(pos => ({ ...pos, zoom: Math.min(pos.zoom * 1.5, 8) }));
+        }
+    };
+
+    const handleZoomOut = () => {
+        if (position.zoom > 1) {
+            setPosition(pos => ({ ...pos, zoom: Math.max(pos.zoom / 1.5, 1) }));
+        }
+    };
+
     return (
-        <div className="w-full h-full bg-stone-100 relative overflow-hidden rounded-xl border border-stone-200 shadow-inner">
-            <ComposableMap projection="geoMercator" projectionConfig={{ scale: 100 }}>
+        <div
+            ref={containerRef}
+            className="w-full h-full bg-stone-100 relative overflow-hidden rounded-xl border border-stone-200 shadow-inner"
+            style={{ touchAction: 'none' }}
+        >
+            <ComposableMap
+                projection="geoMercator"
+                projectionConfig={{ scale: 100 }}
+                width={dimensions.width}
+                height={dimensions.height}
+            >
                 <ZoomableGroup
-                    center={initialCenter}
-                    zoom={initialZoom}
+                    center={position.coordinates}
+                    zoom={position.zoom}
                     maxZoom={8}
-                    onMoveEnd={({ zoom }) => setCurrentZoom(zoom)}
+                    minZoom={1}
+                    disableZooming
+                    onMoveEnd={handleMoveEnd}
                 >
                     <Geographies geography={geoUrl}>
                         {({ geographies }) =>
@@ -167,9 +295,27 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
             </ComposableMap>
             <Tooltip id="my-tooltip" content={content} />
 
+            {/* Zoom Controls */}
+            <div className="absolute top-4 right-4 flex flex-col gap-2">
+                <button
+                    onClick={handleZoomIn}
+                    className="w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow-md flex items-center justify-center text-stone-600 hover:bg-white hover:text-stone-900 transition-colors active:scale-95"
+                    aria-label="Zoom In"
+                >
+                    <Plus size={20} />
+                </button>
+                <button
+                    onClick={handleZoomOut}
+                    className="w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow-md flex items-center justify-center text-stone-600 hover:bg-white hover:text-stone-900 transition-colors active:scale-95"
+                    aria-label="Zoom Out"
+                >
+                    <Minus size={20} />
+                </button>
+            </div>
+
             {/* Helper text overlay */}
             <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-stone-500 shadow-sm pointer-events-none">
-                {isMobile ? "Pinch to zoom • Tap a country" : "Scroll to zoom • Click a country"}
+                {isMobile ? "Pinch to zoom • Tap a country" : "Scroll or use buttons to zoom"}
             </div>
 
             {/* Zoom indicator */}
@@ -181,4 +327,5 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
 };
 
 export default WorldMap;
+
 
