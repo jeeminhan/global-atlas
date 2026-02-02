@@ -49,7 +49,7 @@ function App() {
     };
 
     return (
-        <div className="h-screen w-screen bg-stone-100 flex flex-col overflow-hidden font-sans text-stone-900">
+        <div className="h-[100dvh] w-screen bg-stone-100 flex flex-col overflow-hidden font-sans text-stone-900 pt-[env(safe-area-inset-top)]">
             {/* Navbar / Header */}
             <header className="bg-white/80 backdrop-blur border-b border-stone-200 px-4 py-3 flex justify-between items-center z-10 shrink-0">
                 <div className="flex items-center gap-2">

@@ -1,147 +1,191 @@
+
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 import { Tooltip } from "react-tooltip";
-import { geoCentroid } from "d3-geo";
+import { geoCentroid, geoArea } from "d3-geo";
 import { Plus, Minus } from "lucide-react";
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
-// Manual abbreviations for map clarity
-const abbreviations = {
-    "United States of America": "USA",
-    "United Kingdom": "UK",
-    "United Arab Emirates": "UAE",
-    "Central African Republic": "CAR",
-    "Democratic Republic of the Congo": "DRC",
-    "Russian Federation": "Russia",
-    "Dominican Republic": "DR",
-    "South Sudan": "S. Sudan",
-    "Papua New Guinea": "PNG",
-    "South Africa": "RSA",
-    "Saudi Arabia": "KSA",
-    "South Korea": "ROK",
-    "North Korea": "DPRK",
-    "Switzerland": "SUI",
-    "Netherlands": "NED",
-    "Philippines": "PH",
-    "New Zealand": "NZ",
-    "Congo": "COG",
-};
-
-// Large countries that show labels at low zoom
+// Large countries that show labels at low zoom (Top 7 by area)
 const majorCountries = [
     "United States of America", "Russia", "Canada", "China", "Brazil",
-    "Australia", "India", "Argentina", "Kazakhstan", "Algeria",
-    "Democratic Republic of the Congo", "Saudi Arabia", "Mexico", "Indonesia",
-    "Sudan", "Libya", "Iran", "Mongolia", "Peru", "Chad", "Niger", "Angola",
-    "Mali", "South Africa", "Colombia", "Ethiopia", "Bolivia", "Mauritania",
-    "Egypt", "Tanzania", "Nigeria", "Pakistan", "Namibia", "Mozambique",
-    "Venezuela", "Zambia", "Turkey", "Myanmar", "Afghanistan", "Somalia"
+    "Australia", "India"
 ];
 
 const WorldMap = ({ onCountryClick, countryStats = {} }) => {
     const [content, setContent] = useState("");
-    // Lazy init position to set distinct initial center for mobile vs desktop
-    const [position, setPosition] = useState(() => {
+
+    // Initial state: Center of world (0,20), default scale depends on device
+    const [viewState, setViewState] = useState(() => {
         const isMobileInit = typeof window !== 'undefined' && window.innerWidth < 768;
-        return { coordinates: isMobileInit ? [0, 30] : [0, 20], zoom: isMobileInit ? 1.5 : 1 };
+        return {
+            rotate: [0, -20, 0], // [Longitude, Latitude, Roll] - Inverted Lat for viewing
+            scale: isMobileInit ? 140 : 160 // Base scale (approx zoom 1)
+        };
     });
 
-    // Track dimensions to ensure map fills container
-    const [dimensions, setDimensions] = useState(() => ({
-        width: typeof window !== 'undefined' ? window.innerWidth : 800,
-        height: typeof window !== 'undefined' ? window.innerHeight : 600
-    }));
-
-    const [isMobile, setIsMobile] = useState(false);
+    // Track dimensions to verify map sizing
+    const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
     const containerRef = useRef(null);
-    const lastPinchDistance = useRef(null);
 
-    // Update dimensions and mobile status via ResizeObserver
+    // Interaction Refs
+    const isDragging = useRef(false);
+    const lastPos = useRef({ x: 0, y: 0 });
+    const lastPinchDist = useRef(null);
+
+    // --- EFFECT: Resize Observer ---
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
-
-        // Initial measure
-        setDimensions({ width: container.offsetWidth, height: container.offsetHeight });
-        setIsMobile(container.offsetWidth < 768);
 
         const resizeObserver = new ResizeObserver((entries) => {
             for (let entry of entries) {
                 const { width, height } = entry.contentRect;
                 setDimensions({ width, height });
-                setIsMobile(width < 768);
             }
         });
-
         resizeObserver.observe(container);
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Pinch-to-zoom touch handlers for mobile
-    const getDistance = useCallback((touches) => {
-        const dx = touches[0].clientX - touches[1].clientX;
-        const dy = touches[0].clientY - touches[1].clientY;
-        return Math.sqrt(dx * dx + dy * dy);
+    // --- INTERACTION LOGIC (Custom) ---
+
+    // 1. Zoom Logic (Wheel / Pinch / Buttons)
+    const handleZoom = useCallback((delta, isMultiplier = true) => {
+        setViewState(current => {
+            let newScale;
+            if (isMultiplier) {
+                newScale = current.scale * delta;
+            } else {
+                newScale = current.scale + delta;
+            }
+
+            // Clamp Zoom: Min 100 (Zoom 1x), Max 4000 (Zoom ~30x)
+            newScale = Math.max(100, Math.min(4000, newScale));
+            return { ...current, scale: newScale };
+        });
+    }, []);
+
+    // 2. Pan Logic (Drag) -> Updates Rotation
+    const handlePan = useCallback((dx, dy) => {
+        setViewState(current => {
+            // Sensitivity adjusts with scale: Zoomed in = slower pan
+            const sensitivity = 75 / current.scale;
+
+            const newRotate = [
+                current.rotate[0] + (dx * sensitivity), // Longitude (Infinite)
+                Math.max(-80, Math.min(80, current.rotate[1] - (dy * sensitivity))), // Latitude (Clamped)
+                0
+            ];
+
+            return { ...current, rotate: newRotate };
+        });
     }, []);
 
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
-        // Touch events for mobile pinch
-        const handleTouchStart = (e) => {
+        // -- HANDLERS --
+
+        const onTouchStart = (e) => {
             if (e.touches.length === 2) {
-                lastPinchDistance.current = getDistance(e.touches);
-            }
-        };
-
-        const handleTouchMove = (e) => {
-            if (e.touches.length === 2 && lastPinchDistance.current !== null) {
+                // Pinch Start
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
                 e.preventDefault();
-                const newDistance = getDistance(e.touches);
-                const scale = newDistance / lastPinchDistance.current;
-
-                setPosition(prev => ({
-                    ...prev,
-                    zoom: Math.max(1, Math.min(8, prev.zoom * scale))
-                }));
-
-                lastPinchDistance.current = newDistance;
+            } else if (e.touches.length === 1) {
+                // Pan Start
+                isDragging.current = true;
+                lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             }
         };
 
-        const handleTouchEnd = () => {
-            lastPinchDistance.current = null;
+        const onTouchMove = (e) => {
+            // Prevent default scroll behavior
+            if (e.cancelable) e.preventDefault();
+
+            if (e.touches.length === 2 && lastPinchDist.current) {
+                // Pinch Move
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                const factor = dist / lastPinchDist.current;
+                handleZoom(factor, true); // Zoom by multiplier
+                lastPinchDist.current = dist;
+
+            } else if (e.touches.length === 1 && isDragging.current) {
+                // Pan Move
+                const dx = e.touches[0].clientX - lastPos.current.x;
+                const dy = e.touches[0].clientY - lastPos.current.y;
+                lastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                handlePan(dx, dy);
+            }
         };
 
-        // Wheel event for Mac trackpad pinch AND scroll wheel zoom
-        const handleWheel = (e) => {
+        const onTouchEnd = () => {
+            isDragging.current = false;
+            lastPinchDist.current = null;
+        };
+
+        const onMouseDown = (e) => {
+            isDragging.current = true;
+            lastPos.current = { x: e.clientX, y: e.clientY };
+            container.style.cursor = 'grabbing';
+        };
+
+        const onMouseMove = (e) => {
+            if (!isDragging.current) return;
+            const dx = e.clientX - lastPos.current.x;
+            const dy = e.clientY - lastPos.current.y;
+            lastPos.current = { x: e.clientX, y: e.clientY };
+            handlePan(dx, dy);
+        };
+
+        const onMouseUp = () => {
+            isDragging.current = false;
+            if (container) container.style.cursor = 'grab';
+        };
+
+        const onWheel = (e) => {
+            // Standardize wheel direction
             e.preventDefault();
-
-            // Mac trackpad pinch gestures have ctrlKey = true
-            // Regular scroll wheel zooming
-            const zoomSensitivity = e.ctrlKey ? 0.01 : 0.002;
-            const delta = -e.deltaY * zoomSensitivity;
-
-            setPosition(prev => ({
-                ...prev,
-                zoom: Math.max(1, Math.min(8, prev.zoom * (1 + delta)))
-            }));
+            const delta = -e.deltaY;
+            // Use a small multiplier for smooth wheel zoom
+            const multiplier = delta > 0 ? 1.05 : 0.95;
+            handleZoom(multiplier, true);
         };
 
-        container.addEventListener('touchstart', handleTouchStart, { passive: false });
-        container.addEventListener('touchmove', handleTouchMove, { passive: false });
-        container.addEventListener('touchend', handleTouchEnd);
-        container.addEventListener('wheel', handleWheel, { passive: false });
+        // Initialize Cursor
+        container.style.cursor = 'grab';
+
+        // Add Listeners (Passive: false due to preventDefault)
+        // Note: Using 'wheel' non-passive is vital for controlling zoom without scrolling page
+        container.addEventListener('touchstart', onTouchStart, { passive: false });
+        container.addEventListener('touchmove', onTouchMove, { passive: false });
+        container.addEventListener('touchend', onTouchEnd);
+        container.addEventListener('wheel', onWheel, { passive: false });
+
+        container.addEventListener('mousedown', onMouseDown);
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
 
         return () => {
-            container.removeEventListener('touchstart', handleTouchStart);
-            container.removeEventListener('touchmove', handleTouchMove);
-            container.removeEventListener('touchend', handleTouchEnd);
-            container.removeEventListener('wheel', handleWheel);
+            container.removeEventListener('touchstart', onTouchStart);
+            container.removeEventListener('touchmove', onTouchMove);
+            container.removeEventListener('touchend', onTouchEnd);
+            container.removeEventListener('wheel', onWheel);
+            container.removeEventListener('mousedown', onMouseDown);
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
         };
-    }, [getDistance]);
+    }, [handleZoom, handlePan]);
+
+
+    // --- RENDERING HELPERS ---
 
     const colors = {
         unvisited: "#D6D3D1",
@@ -150,177 +194,147 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
         gold: "#EAB308",
     };
 
-    const currentZoom = position.zoom;
+    // Derived Zoom Level for labels (Scale 160 ~ Zoom 1)
+    const zoomLevel = viewState.scale / 160;
 
-    // Calculate label visibility based on zoom
-    const getLabelOpacity = (countryName) => {
-        const isMajor = majorCountries.includes(countryName);
+    const getLabelOpacity = (name, geo) => {
+        try {
+            if (!name) return 0;
+            if (majorCountries.includes(name)) return zoomLevel < 2 ? 0.6 : 0.8;
+            if (!geo) return 0;
 
-        if (currentZoom < 1.5) {
-            return isMajor ? 0.4 : 0;
-        }
-        if (currentZoom < 2.5) {
-            return isMajor ? 0.6 : 0.3;
-        }
-        return 0.7;
+            const area = geoArea(geo); // Steradians
+            if (isNaN(area)) return 0;
+
+            // Updated Thresholds (Compatible with new zoomLevel calculation)
+            if (area > 0.05) return zoomLevel > 2 ? 0.8 : 0;   // Very Large
+            if (area > 0.005) return zoomLevel > 3 ? 0.8 : 0;  // Medium-Large
+            if (area > 0.001) return zoomLevel > 4 ? 0.9 : 0;  // Medium-Small
+            if (area > 0.0002) return zoomLevel > 5 ? 0.9 : 0; // Small
+
+            return zoomLevel > 6 ? 1 : 0;
+        } catch (e) { return 0; }
     };
 
-    // Dynamic font size based on zoom
-    const getLabelFontSize = () => {
-        if (currentZoom < 1.5) return 4;
-        if (currentZoom < 2.5) return 3.5;
-        return 3;
-    };
+    // Dynamic font size based on zoom (Flatter curve = much larger text at high zoom)
+    const getFontSize = () => Math.max(1.5, 24 / Math.pow(zoomLevel, 0.3));
 
-    // Handle zoom/pan end from gestures - with validation
-    const handleMoveEnd = (newPosition) => {
-        // Validate the position data before updating state
-        if (newPosition &&
-            typeof newPosition.zoom === 'number' &&
-            !isNaN(newPosition.zoom) &&
-            Array.isArray(newPosition.coordinates) &&
-            newPosition.coordinates.length === 2 &&
-            typeof newPosition.coordinates[0] === 'number' &&
-            typeof newPosition.coordinates[1] === 'number') {
-            setPosition({
-                coordinates: newPosition.coordinates,
-                zoom: Math.max(1, Math.min(8, newPosition.zoom))
-            });
-        }
-    };
-
-    // Zoom button handlers
-    const handleZoomIn = () => {
-        if (position.zoom < 8) {
-            setPosition(pos => ({ ...pos, zoom: Math.min(pos.zoom * 1.5, 8) }));
-        }
-    };
-
-    const handleZoomOut = () => {
-        if (position.zoom > 1) {
-            setPosition(pos => ({ ...pos, zoom: Math.max(pos.zoom / 1.5, 1) }));
-        }
-    };
 
     return (
         <div
             ref={containerRef}
-            className="w-full h-full bg-stone-100 relative overflow-hidden rounded-xl border border-stone-200 shadow-inner"
-            style={{ touchAction: 'none' }}
+            className="w-full h-full bg-stone-100 relative overflow-hidden"
+            style={{ touchAction: 'none' }} // Critical for browser gestures
         >
             <ComposableMap
-                projection="geoMercator"
-                projectionConfig={{ scale: 100 }}
                 width={dimensions.width}
                 height={dimensions.height}
+                projection="geoMercator"
+                projectionConfig={{
+                    rotate: viewState.rotate,
+                    scale: viewState.scale
+                }}
             >
-                <ZoomableGroup
-                    center={position.coordinates}
-                    zoom={position.zoom}
-                    maxZoom={8}
-                    minZoom={1}
-                    disableZooming
-                    onMoveEnd={handleMoveEnd}
-                >
-                    <Geographies geography={geoUrl}>
-                        {({ geographies }) =>
-                            geographies.map((geo) => {
-                                const name = geo.properties.name;
-                                const stats = countryStats[name];
-                                const regionCount = stats ? stats.regions.size : 0;
+                {/* No ZoomableGroup needed anymore! */}
+                <Geographies geography={geoUrl}>
+                    {({ geographies }) =>
+                        geographies.map((geo) => {
+                            const name = geo.properties.name;
+                            const stats = countryStats[name];
+                            const regionCount = stats ? stats.regions.size : 0;
 
-                                let fillColor = colors.unvisited;
-                                if (regionCount >= 3) fillColor = colors.gold;
-                                else if (regionCount === 2) fillColor = colors.silver;
-                                else if (regionCount === 1) fillColor = colors.bronze;
+                            // Fill Color
+                            let fillColor = colors.unvisited;
+                            if (regionCount >= 3) fillColor = colors.gold;
+                            else if (regionCount === 2) fillColor = colors.silver;
+                            else if (regionCount === 1) fillColor = colors.bronze;
 
-                                const centroid = geoCentroid(geo);
-                                const label = abbreviations[name] || name.substring(0, 3).toUpperCase();
-                                const labelOpacity = getLabelOpacity(name);
+                            // Label
+                            const opacity = getLabelOpacity(name, geo);
+                            const centroid = geoCentroid(geo);
 
-                                return (
-                                    <React.Fragment key={geo.rsmKey}>
-                                        <Geography
-                                            geography={geo}
-                                            onMouseEnter={() => {
-                                                setContent(`${name}${regionCount > 0 ? ` (${regionCount} regions)` : ""}`);
-                                            }}
-                                            onMouseLeave={() => {
-                                                setContent("");
-                                            }}
-                                            onClick={() => onCountryClick(name)}
-                                            style={{
-                                                default: {
-                                                    fill: fillColor,
-                                                    outline: "none",
-                                                    transition: "all 0.3s ease"
-                                                },
-                                                hover: {
-                                                    fill: regionCount > 0 ? fillColor : "#A8A29E",
-                                                    outline: "none",
-                                                    cursor: "pointer"
-                                                },
-                                                pressed: {
-                                                    fill: "#78716C",
-                                                    outline: "none"
-                                                },
-                                            }}
-                                        />
-                                        {labelOpacity > 0 && (
-                                            <Marker coordinates={centroid}>
-                                                <text
-                                                    y="2"
-                                                    fontSize={getLabelFontSize()}
-                                                    textAnchor="middle"
-                                                    fill="#44403C"
-                                                    style={{
-                                                        opacity: labelOpacity,
-                                                        transition: "opacity 0.3s ease",
-                                                        pointerEvents: "none",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em"
-                                                    }}
-                                                >
-                                                    {label}
-                                                </text>
-                                            </Marker>
-                                        )}
-                                    </React.Fragment>
-                                );
-                            })
-                        }
-                    </Geographies>
-                </ZoomableGroup>
+                            return (
+                                <React.Fragment key={geo.rsmKey}>
+                                    <Geography
+                                        geography={geo}
+                                        onClick={() => onCountryClick(name)}
+                                        onMouseEnter={() => setContent(`${name}${regionCount ? ` (${regionCount})` : ""} `)}
+                                        onMouseLeave={() => setContent("")}
+                                        style={{
+                                            default: {
+                                                fill: fillColor,
+                                                fillOpacity: 1,
+                                                stroke: "#A8A29E",
+                                                strokeWidth: 0.5 / zoomLevel,
+                                                outline: "none"
+                                            },
+                                            hover: {
+                                                fill: regionCount > 0 ? fillColor : "#A8A29E",
+                                                fillOpacity: 1,
+                                                stroke: "#78716C",
+                                                strokeWidth: 1.5 / zoomLevel,
+                                                outline: "none",
+                                                cursor: "pointer"
+                                            },
+                                            pressed: {
+                                                fill: "#78716C",
+                                                outline: "none"
+                                            }
+                                        }}
+                                    />
+                                    {opacity > 0 && (
+                                        <Marker coordinates={centroid}>
+                                            <text
+                                                textAnchor="middle"
+                                                y={2}
+                                                style={{
+                                                    fontFamily: "sans-serif",
+                                                    fontSize: getFontSize(),
+                                                    fill: "#44403C",
+                                                    opacity: opacity,
+                                                    pointerEvents: "none",
+                                                    textShadow: "0px 0px 2px rgba(255,255,255,0.8)",
+                                                    fontWeight: 600,
+                                                    transition: "opacity 0.2s"
+                                                }}
+                                            >
+                                                {name}
+                                            </text>
+                                        </Marker>
+                                    )}
+                                </React.Fragment>
+                            );
+                        })
+                    }
+                </Geographies>
             </ComposableMap>
+
             <Tooltip id="my-tooltip" content={content} />
 
             {/* Zoom Controls */}
             <div className="absolute top-4 right-4 flex flex-col gap-2">
                 <button
-                    onClick={handleZoomIn}
-                    className="w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow-md flex items-center justify-center text-stone-600 hover:bg-white hover:text-stone-900 transition-colors active:scale-95"
-                    aria-label="Zoom In"
+                    onClick={() => handleZoom(1.5, true)}
+                    className="w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow flex items-center justify-center text-stone-600 hover:bg-white active:scale-95"
                 >
                     <Plus size={20} />
                 </button>
                 <button
-                    onClick={handleZoomOut}
-                    className="w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow-md flex items-center justify-center text-stone-600 hover:bg-white hover:text-stone-900 transition-colors active:scale-95"
-                    aria-label="Zoom Out"
+                    onClick={() => handleZoom(0.66, true)}
+                    className="w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow flex items-center justify-center text-stone-600 hover:bg-white active:scale-95"
                 >
                     <Minus size={20} />
                 </button>
             </div>
 
-            {/* Helper text overlay */}
-            <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-stone-500 shadow-sm pointer-events-none">
-                {isMobile ? "Pinch to zoom • Tap a country" : "Scroll or use buttons to zoom"}
-            </div>
-
-            {/* Zoom indicator */}
-            <div className="absolute bottom-4 right-4 bg-white/80 backdrop-blur px-2 py-1 rounded-full text-xs font-medium text-stone-400 shadow-sm pointer-events-none">
-                {currentZoom.toFixed(1)}x
+            {/* Legend / Info */}
+            <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end pointer-events-none">
+                <div className="bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-stone-500 shadow-sm">
+                    {dimensions.width < 768 ? "Pinch to zoom • Drag to rotate" : "Scroll to zoom • Drag to rotate"}
+                </div>
+                <div className="bg-white/80 backdrop-blur px-2 py-1 rounded-full text-xs font-medium text-stone-400 shadow-sm">
+                    {zoomLevel.toFixed(1)}x
+                </div>
             </div>
         </div>
     );
