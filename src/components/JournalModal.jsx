@@ -81,7 +81,7 @@ const JournalModal = ({ isOpen, countryName, onClose, onSave }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
                 <div className="bg-stone-800 text-white p-4 flex justify-between items-center">
@@ -212,7 +212,7 @@ const JournalModal = ({ isOpen, countryName, onClose, onSave }) => {
                                         <input
                                             type="file"
                                             accept="image/*"
-                                            capture="environment"
+                                            capture="user"
                                             onChange={handlePhotoChange}
                                             className="hidden"
                                         />
