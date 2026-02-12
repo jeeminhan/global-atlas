@@ -1,14 +1,54 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import SouvenirDie from "./SouvenirDie";
-import { Camera, X } from "lucide-react";
+import { Camera, X, MapPin, Search } from "lucide-react";
+import { Country, City } from 'country-state-city';
 
 const JournalModal = ({ isOpen, countryName, onClose, onSave }) => {
     const [step, setStep] = useState(1); // 1: Region, 2: Roll, 3: Answer/Photo
     const [region, setRegion] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
     const [souvenir, setSouvenir] = useState(null);
     const [answer, setAnswer] = useState("");
     const [photo, setPhoto] = useState(null);
     const [photoPreview, setPhotoPreview] = useState(null);
+
+    // Get Country Code for the current countryName
+    const countryCode = useMemo(() => {
+        if (!countryName) return null;
+        // Try exact match, then partial match
+        const countries = Country.getAllCountries();
+        const found = countries.find(c =>
+            c.name.toLowerCase() === countryName.toLowerCase() ||
+            countryName.toLowerCase().includes(c.name.toLowerCase()) ||
+            c.name.toLowerCase().includes(countryName.toLowerCase())
+        );
+        return found ? found.isoCode : null;
+    }, [countryName]);
+
+    // Get Cities for that country
+    const cities = useMemo(() => {
+        if (!countryCode) return [];
+        return City.getCitiesOfCountry(countryCode);
+    }, [countryCode]);
+
+    // Filter cities based on search
+    const filteredCities = useMemo(() => {
+        if (!searchTerm.trim()) return [];
+        return cities
+            .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
+            .slice(0, 10); // Limit to top 10 for performance
+    }, [cities, searchTerm]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setStep(1);
+            setRegion("");
+            setSearchTerm("");
+            setSouvenir(null);
+            setAnswer("");
+            setPhotoPreview(null);
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -37,13 +77,6 @@ const JournalModal = ({ isOpen, countryName, onClose, onSave }) => {
             answer,
             photo: photoPreview // Saving base64 for localstorage simplicity (limited size, but ok for prototype)
         });
-        // Reset and close
-        setStep(1);
-        setRegion("");
-        setSouvenir(null);
-        setAnswer("");
-        setPhoto(null);
-        setPhotoPreview(null);
         onClose();
     };
 
@@ -65,22 +98,59 @@ const JournalModal = ({ isOpen, countryName, onClose, onSave }) => {
                     {step === 1 && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                             <p className="text-stone-600">To unlock this country, let's get specific.</p>
-                            <div>
-                                <label className="block text-sm font-medium text-stone-700 mb-1">
-                                    Which City or Region is the student from?
+                            <div className="relative">
+                                <label className="block text-sm font-medium text-stone-700 mb-1 flex items-center gap-1">
+                                    <MapPin size={14} /> Which City or Region is the student from?
                                 </label>
-                                <input
-                                    type="text"
-                                    value={region}
-                                    onChange={(e) => setRegion(e.target.value)}
-                                    placeholder="e.g. Rio de Janeiro"
-                                    className="w-full p-3 border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-500 outline-none"
-                                    autoFocus
-                                />
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={region || searchTerm}
+                                        onChange={(e) => {
+                                            setSearchTerm(e.target.value);
+                                            setRegion(""); // Clear selected region if typing
+                                        }}
+                                        placeholder="Search for a city (e.g. Rio de Janeiro)"
+                                        className="w-full p-3 pl-10 border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-500 outline-none"
+                                        autoFocus
+                                    />
+                                    <Search className="absolute left-3 top-3.5 text-stone-400" size={18} />
+                                </div>
+
+                                {filteredCities.length > 0 && !region && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-stone-200 rounded-lg shadow-xl overflow-hidden">
+                                        {filteredCities.map((city, idx) => (
+                                            <button
+                                                key={`${city.name}-${idx}`}
+                                                className="w-full text-left px-4 py-2 hover:bg-stone-50 text-stone-700 border-b border-stone-100 last:border-0"
+                                                onClick={() => {
+                                                    setRegion(city.name);
+                                                    setSearchTerm(city.name);
+                                                }}
+                                            >
+                                                {city.name}
+                                                {city.stateCode && <span className="text-xs text-stone-400 ml-2">({city.stateCode})</span>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
+
+                            {region && (
+                                <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 text-sm text-stone-600 flex items-center justify-between">
+                                    <span>Selected: <strong>{region}</strong></span>
+                                    <button onClick={() => setRegion("")} className="text-stone-400 hover:text-stone-600">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            )}
+
                             <button
-                                disabled={!region.trim()}
-                                onClick={() => setStep(2)}
+                                disabled={!region.trim() && !searchTerm.trim()}
+                                onClick={() => {
+                                    if (!region) setRegion(searchTerm); // Use custom input if no city selected
+                                    setStep(2);
+                                }}
                                 className="w-full bg-stone-800 text-white py-3 rounded-lg font-bold disabled:opacity-50 hover:bg-stone-900 transition-colors"
                             >
                                 Continue

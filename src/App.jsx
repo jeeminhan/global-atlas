@@ -49,9 +49,15 @@ function App() {
     };
 
     return (
-        <div className="h-[100dvh] w-screen bg-stone-100 flex flex-col overflow-hidden font-sans text-stone-900 pt-[env(safe-area-inset-top)]">
+        <div className="h-full w-full bg-stone-100 flex flex-col overflow-hidden font-sans text-stone-900">
             {/* Navbar / Header */}
-            <header className="bg-white/80 backdrop-blur border-b border-stone-200 px-4 py-3 flex justify-between items-center z-10 shrink-0">
+            <header
+                className="bg-white border-b border-stone-200 px-4 flex justify-between items-center z-[100] shrink-0 shadow-sm"
+                style={{
+                    paddingTop: '1rem',
+                    paddingBottom: '0.75rem'
+                }}
+            >
                 <div className="flex items-center gap-2">
                     <span className="text-2xl">🌍</span>
                     <h1 className="font-bold text-lg tracking-tight">The Global Atlas</h1>

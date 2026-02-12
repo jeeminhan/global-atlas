@@ -16,12 +16,13 @@ const majorCountries = [
 const WorldMap = ({ onCountryClick, countryStats = {} }) => {
     const [content, setContent] = useState("");
 
-    // Initial state: Center of world (0,20), default scale depends on device
+    // Initial state: Center of world (0,0), scale depends on device
     const [viewState, setViewState] = useState(() => {
         const isMobileInit = typeof window !== 'undefined' && window.innerWidth < 768;
         return {
-            rotate: [0, -20, 0], // [Longitude, Latitude, Roll] - Inverted Lat for viewing
-            scale: isMobileInit ? 140 : 160 // Base scale (approx zoom 1)
+            rotateX: 0,   // Horizontal (Endless Scroll)
+            centerY: 0,   // Vertical (Stable Scroll)
+            scale: isMobileInit ? 140 : 160
         };
     });
 
@@ -67,19 +68,17 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
         });
     }, []);
 
-    // 2. Pan Logic (Drag) -> Updates Rotation
+    // 2. Pan Logic (Drag) -> Updates RotateX (horizontal) and CenterY (vertical)
     const handlePan = useCallback((dx, dy) => {
         setViewState(current => {
             // Sensitivity adjusts with scale: Zoomed in = slower pan
             const sensitivity = 75 / current.scale;
 
-            const newRotate = [
-                current.rotate[0] + (dx * sensitivity), // Longitude (Infinite)
-                Math.max(-80, Math.min(80, current.rotate[1] - (dy * sensitivity))), // Latitude (Clamped)
-                0
-            ];
-
-            return { ...current, rotate: newRotate };
+            return {
+                ...current,
+                rotateX: current.rotateX + (dx * sensitivity),
+                centerY: Math.max(-80, Math.min(80, current.centerY + (dy * sensitivity)))
+            };
         });
     }, []);
 
@@ -231,7 +230,8 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
                 height={dimensions.height}
                 projection="geoMercator"
                 projectionConfig={{
-                    rotate: viewState.rotate,
+                    rotate: [viewState.rotateX, 0, 0],
+                    center: [0, viewState.centerY],
                     scale: viewState.scale
                 }}
             >
@@ -330,7 +330,7 @@ const WorldMap = ({ onCountryClick, countryStats = {} }) => {
             {/* Legend / Info */}
             <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end pointer-events-none">
                 <div className="bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-stone-500 shadow-sm">
-                    {dimensions.width < 768 ? "Pinch to zoom • Drag to rotate" : "Scroll to zoom • Drag to rotate"}
+                    {dimensions.width < 768 ? "Pinch to zoom • Drag to pan" : "Scroll to zoom • Drag to pan"}
                 </div>
                 <div className="bg-white/80 backdrop-blur px-2 py-1 rounded-full text-xs font-medium text-stone-400 shadow-sm">
                     {zoomLevel.toFixed(1)}x
