@@ -62,13 +62,13 @@ const VideoModal = ({ isOpen, onClose }) => {
 
                 {/* OBVIOUS ACTION BUTTON (Only in full mode) */}
                 {!isMinimized && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="absolute inset-0 flex flex-col items-center justify-end pb-8 sm:pb-12 pointer-events-none">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setIsMinimized(true);
                             }}
-                            className="pointer-events-auto mt-64 bg-yellow-400 text-stone-900 px-8 py-4 rounded-full font-black text-lg shadow-[0_0_50px_rgba(250,204,21,0.3)] hover:bg-yellow-500 hover:scale-110 active:scale-95 transition-all flex items-center gap-3 animate-bounce"
+                            className="pointer-events-auto bg-yellow-400 text-stone-900 px-6 py-3 sm:px-8 sm:py-4 rounded-full font-black text-base sm:text-lg shadow-[0_0_50px_rgba(250,204,21,0.3)] hover:bg-yellow-500 hover:scale-110 active:scale-95 transition-all flex items-center gap-2 sm:gap-3 animate-bounce mb-4 sm:mb-0"
                         >
                             <Map size={24} />
                             START EXPLORING MAP
