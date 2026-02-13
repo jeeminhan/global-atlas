@@ -4,7 +4,8 @@ import JournalModal from "./components/JournalModal";
 import PassportGallery from "./components/PassportGallery";
 import RulesModal from "./components/RulesModal";
 import FeedbackModal from "./components/FeedbackModal";
-import { BookOpen, Map as MapIcon, Plus, HelpCircle, MessageCircle } from "lucide-react";
+import VideoModal from "./components/VideoModal";
+import { BookOpen, Map as MapIcon, Plus, HelpCircle, MessageCircle, PlayCircle } from "lucide-react";
 
 function App() {
     const [entries, setEntries] = useState([]);
@@ -12,6 +13,7 @@ function App() {
     const [isGalleryOpen, setIsGalleryOpen] = useState(false);
     const [isRulesOpen, setIsRulesOpen] = useState(false);
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+    const [isVideoModalOpen, setIsVideoModalOpen] = useState(true); // Default to open on first visit
     const [selectedCountry, setSelectedCountry] = useState(null);
 
     // Load from LocalStorage
@@ -63,7 +65,16 @@ function App() {
                     <h1 className="font-bold text-lg tracking-tight">The Global Atlas</h1>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
+                    <button
+                        onClick={() => setIsVideoModalOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-full transition-colors text-sm font-medium border border-stone-200 shadow-sm"
+                        title="Watch Explainer"
+                    >
+                        <PlayCircle size={18} className="text-stone-800 animate-pulse" />
+                        <span className="hidden md:inline">Watch Intro</span>
+                    </button>
+
                     <button
                         onClick={() => setIsFeedbackOpen(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-stone-500 hover:bg-stone-100 rounded-full transition-colors text-sm font-medium"
@@ -72,6 +83,7 @@ function App() {
                         <MessageCircle size={18} />
                         <span className="hidden sm:inline">Feedback</span>
                     </button>
+
                     <button
                         onClick={() => setIsRulesOpen(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-stone-500 hover:bg-stone-100 rounded-full transition-colors text-sm font-medium"
@@ -80,15 +92,17 @@ function App() {
                         <HelpCircle size={18} />
                         <span className="hidden sm:inline">How to Play</span>
                     </button>
+
                     <div className="bg-stone-100 px-3 py-1 rounded-full text-xs font-semibold text-stone-600">
                         {visitedCount} / 195
                     </div>
+
                     <button
                         onClick={() => setIsGalleryOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-stone-800 text-white rounded-full hover:bg-stone-900 shadow-md transition-colors text-sm font-semibold"
                     >
                         <BookOpen size={18} />
-                        <span>Passport</span>
+                        <span className="hidden xs:inline">Passport</span>
                     </button>
                 </div>
             </header>
@@ -99,14 +113,14 @@ function App() {
                     onCountryClick={handleCountryClick}
                     countryStats={countryStats}
                 />
-
-                {/* Floating Action Button (Optional, maybe for manual add) */}
-                {/* <button className="absolute bottom-6 right-6 bg-yellow-400 p-4 rounded-full shadow-lg hover:bg-yellow-500 transition-transform hover:scale-105">
-           <Plus size={24} />
-        </button> */}
             </main>
 
             {/* Modals */}
+            <VideoModal
+                isOpen={isVideoModalOpen}
+                onClose={() => setIsVideoModalOpen(false)}
+            />
+
             <RulesModal
                 isOpen={isRulesOpen}
                 onClose={() => setIsRulesOpen(false)}
